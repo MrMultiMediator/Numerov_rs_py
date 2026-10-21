@@ -91,7 +91,8 @@ fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, dguess: f64, tolerance: f64, 
 
     while !all_converged {
         if Efuncs.is_empty() {
-            initial_scan(lower_e, upper_e, dguess, s, &mut Efuncs)            
+            initial_scan(lower_e, upper_e, dguess, s, &mut Efuncs); 
+            println!("hello world");
         } else {
 
         }
@@ -100,26 +101,33 @@ fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, dguess: f64, tolerance: f64, 
 
 fn initial_scan(lower_e: f64, upper_e: f64, dguess: f64, s: f64, Efuncs: &mut Vec<EFunc>) {
     /// Find all eigenvalues within the range provided
-    let current_guess: f64 = lower_e;
+    let mut current_guess: f64 = lower_e;
     let mut old_psi: Vec<f64> = Vec::new();
 
     while current_guess <= upper_e {
         let (xx, psi) = compute_psi_of_x(current_guess, s);
 
-        if old_psi.len() < 1 {
+        if old_psi.is_empty() {
             old_psi = psi.clone();
         }
 
         let old_psi_len = old_psi.len();
         let psi_len = psi.len();
 
+        println!("{} > 0. && {} < 0.) || ({} < 0. && {} > 0.)", psi[psi_len-1], old_psi[old_psi_len-1], psi[psi_len-1], old_psi[old_psi_len-1]);
+
         // The tail end of psi has crossed the origin between iterations, which means
         // we have crossed an eigenfunction
-        if (psi[psi_len-1] > 0. && old_psi[old_psi_len-1] < 0.) || (psi[psi_len-1] < 0. && old_psi[old_psi_len-1] > 0.) {
-            println!("Found eigenfunction between E = {} and {}", current_guess - dguess, current_guess);
-            Efuncs.push(EFunc::new(current_guess, current_guess-dguess));
-            
+        if let (Some(&curr_last), Some(&old_last)) = (psi.last(), old_psi.last()) {
+            if (curr_last > 0. && old_last < 0.) || (curr_last < 0. && old_last > 0.) {
+                println!("Found eigenfunction between E = {} and {}", current_guess - dguess, current_guess);
+                Efuncs.push(EFunc::new(current_guess, current_guess-dguess));
+            }
+        } else {
+            panic!("psi or old_psi vector was unexpectedly empty during scan!");
         }
+        current_guess += dguess;
+        old_psi = psi.clone();
     }
 }
 

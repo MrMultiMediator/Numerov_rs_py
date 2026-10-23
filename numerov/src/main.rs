@@ -61,7 +61,7 @@ impl EFunc {
         self.set_upper_tail(upper_tail);
         self.set_lower_tail(lower_tail);
     }
-    pub fn check_converged(&self, tolerance: f64) -> bool {
+    pub fn converged(&self, tolerance: f64) -> bool {
         // (self.upper_tail - self.lower_tail).abs() < tolerance
         match(self.upper_tail, self.lower_tail){
             (Some(upper), Some(lower)) => (upper-lower).abs() < tolerance,
@@ -80,7 +80,7 @@ impl EFunc {
     }
 }
 
-fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, dguess: f64, tolerance: f64, upper_e: f64, lower_e: f64){
+fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, mut dguess: f64, tolerance: f64, mut upper_e: f64, mut lower_e: f64){
     /// Run the Numerov Eigensolver procedure
     /// Currently this only does the quadratic potential.
     /// It currently returns nothing and will just write the eigenvals/funcs to disk.
@@ -88,19 +88,50 @@ fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, dguess: f64, tolerance: f64, 
     // Can also do let mut Efuncs = Vec::f64::new();
     let mut Efuncs: Vec<EFunc> = Vec::new();
     let mut all_converged: bool = false;
+    let mut counter: i32 = 0;
+    let mut upper_tail: f64 = 0.;
+    let mut lower_tail: f64 = 0.;
 
     while !all_converged {
         if Efuncs.is_empty() {
             initial_scan(lower_e, upper_e, dguess, s, &mut Efuncs); 
-            println!("hello world");
         } else {
+            dguess /= 10.;
 
+            for (index, eigenfunc) in Efuncs.iter_mut().enumerate() {
+                // counter < 2 is necessary b/c set_bounds need to be called at least
+                // once before eigenfunc.converged() can even run (it needs boundaries
+                // to check). The "or" allows it to ignore the 2nd condition if the
+                // first is true.
+
+                if counter < 2 || !eigenfunc.converged(tolerance) {
+                    (upper_e, lower_e, upper_tail, lower_tail) = scan(
+                        eigenfunc.lower_e, eigenfunc.upper_e, dguess, s
+                    );
+                    eigenfunc.set_bounds(upper_e, lower_e, upper_tail, lower_tail);
+                }
+            }
+            all_converged = check_all_converged(&Efuncs, tolerance);
         }
+        counter += 1;
     }
+    println!("All functions converged");
 }
 
+fn check_all_converged(Efuncs: &Vec<EFunc>, tolerance: f64) -> bool {
+    for (index, eigenfunc) in Efuncs.iter().enumerate() {
+        if !eigenfunc.converged(tolerance) {
+            println!("Function {index} not converged. Terminating convergence check.");
+            return false;
+        }
+        println!("Function {index} converged.");
+    }
+    true
+}
+
+/// Find all eigenvalues within the range provided, and give uncertainty bounds
+/// of width dguess for each eigenvalue
 fn initial_scan(lower_e: f64, upper_e: f64, dguess: f64, s: f64, Efuncs: &mut Vec<EFunc>) {
-    /// Find all eigenvalues within the range provided
     let mut current_guess: f64 = lower_e;
     let mut old_psi: Vec<f64> = Vec::new();
 
@@ -111,24 +142,51 @@ fn initial_scan(lower_e: f64, upper_e: f64, dguess: f64, s: f64, Efuncs: &mut Ve
             old_psi = psi.clone();
         }
 
-        let old_psi_len = old_psi.len();
-        let psi_len = psi.len();
-
-        println!("{} > 0. && {} < 0.) || ({} < 0. && {} > 0.)", psi[psi_len-1], old_psi[old_psi_len-1], psi[psi_len-1], old_psi[old_psi_len-1]);
+        let curr_last = *psi.last().expect("psi vector should never be empty here!");
+        let old_last = *old_psi.last().expect("old psi vector should never be empty!");
 
         // The tail end of psi has crossed the origin between iterations, which means
         // we have crossed an eigenfunction
-        if let (Some(&curr_last), Some(&old_last)) = (psi.last(), old_psi.last()) {
+        //if let (Some(&curr_last), Some(&old_last)) = (psi.last(), old_psi.last()) {
             if (curr_last > 0. && old_last < 0.) || (curr_last < 0. && old_last > 0.) {
                 println!("Found eigenfunction between E = {} and {}", current_guess - dguess, current_guess);
                 Efuncs.push(EFunc::new(current_guess, current_guess-dguess));
             }
-        } else {
+        /* } else {
             panic!("psi or old_psi vector was unexpectedly empty during scan!");
+        } */
+        current_guess += dguess;
+        old_psi = psi.clone();
+    }
+}
+
+fn round_to_11(val: f64) -> f64 {
+    (val * 1e11).round() / 1e11
+}
+
+/// Find an eigenvalue between lower_e and upper_e with an uncertainty of dguess
+fn scan(lower_e: f64, upper_e: f64, dguess: f64, s: f64) -> (f64, f64, f64, f64) {
+    let mut current_guess: f64 = round_to_11(lower_e);
+    let mut old_psi: Vec<f64> = Vec::new();
+
+    while round_to_11(current_guess) <= round_to_11(upper_e) {
+        let (xx, psi) = compute_psi_of_x(current_guess, s);
+
+        if old_psi.is_empty() {
+            old_psi = psi.clone();
+        }
+
+        let curr_last = *psi.last().expect("psi vector should never be empty here!");
+        let old_last = *old_psi.last().expect("old psi vector should never be empty!");
+
+        if (curr_last > 0. && old_last < 0.) || (curr_last < 0. && old_last > 0.) {
+            println!("Found eigenfunction between E = {} and {}", current_guess - dguess, current_guess);
+            return (current_guess, current_guess - dguess, curr_last, old_last);
         }
         current_guess += dguess;
         old_psi = psi.clone();
     }
+    panic!("Exiting scan erroneously. No eigenfunction found in provided limits.");
 }
 
 fn compute_psi_of_x(guess: f64, s: f64) -> (Vec<f64>, Vec<f64>) {
@@ -188,7 +246,7 @@ fn evaluate_psi(guess: f64, s: f64, xx: &Vec<f64>, psi: &Vec<f64>) -> f64 {
 
     let len = psi.len();
     let mut psi_val: f64 = 0.;
-    psi_val += (2. * psi[len-1] - psi[len-2]);
+    psi_val += 2. * psi[len-1] - psi[len-2];
     psi_val += 5. * Gn * psi[len-1] * (s.powi(2))/6.;
     psi_val += Gnm1 * psi[len-2] * (s.powi(2))/12.;
     psi_val /= denom;

@@ -80,17 +80,14 @@ impl EFunc {
     }
 }
 
-fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, mut dguess: f64, tolerance: f64, mut upper_e: f64, mut lower_e: f64){
-    /// Run the Numerov Eigensolver procedure
-    /// Currently this only does the quadratic potential.
-    /// It currently returns nothing and will just write the eigenvals/funcs to disk.
-
+/// Run the Numerov Eigensolver procedure
+/// Currently this only does the quadratic potential.
+/// It currently returns nothing and will just write the eigenvals/funcs to disk.
+fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, mut dguess: f64, tolerance: f64, upper_e: f64, lower_e: f64){
     // Can also do let mut Efuncs = Vec::f64::new();
     let mut Efuncs: Vec<EFunc> = Vec::new();
     let mut all_converged: bool = false;
     let mut counter: i32 = 0;
-    let mut upper_tail: f64 = 0.;
-    let mut lower_tail: f64 = 0.;
 
     while !all_converged {
         if Efuncs.is_empty() {
@@ -105,7 +102,7 @@ fn numerov(x: Array1<f64>, v: Array1<f64>, s: f64, mut dguess: f64, tolerance: f
                 // first is true.
 
                 if counter < 2 || !eigenfunc.converged(tolerance) {
-                    (upper_e, lower_e, upper_tail, lower_tail) = scan(
+                    let (upper_e, lower_e, upper_tail, lower_tail) = scan(
                         eigenfunc.lower_e, eigenfunc.upper_e, dguess, s
                     );
                     eigenfunc.set_bounds(upper_e, lower_e, upper_tail, lower_tail);
